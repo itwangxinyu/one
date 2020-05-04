@@ -19,8 +19,9 @@
 require 'open3'
 require 'base64'
 require 'rexml/document'
-require 'process_list'
-require 'domain'
+
+require_relative 'process_list'
+require_relative 'domain'
 
 ENV['LANG'] = 'C'
 ENV['LC_ALL'] = 'C'

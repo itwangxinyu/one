@@ -21,8 +21,9 @@ $LOAD_PATH.unshift "#{File.dirname(__FILE__)}/../../vmm/firecracker/"
 require 'json'
 require 'base64'
 require 'client'
-require 'process_list'
-require 'domain'
+
+require_relative 'process_list'
+require_relative 'domain'
 
 #-------------------------------------------------------------------------------
 #  Firecracker Monitor Module. This module provides basic functionality to
