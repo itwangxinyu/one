@@ -19,6 +19,7 @@
 require 'open3'
 require 'base64'
 require 'rexml/document'
+require 'process_list'
 
 ENV['LANG'] = 'C'
 ENV['LC_ALL'] = 'C'
@@ -85,93 +86,22 @@ module ProcessList
     #  Number of seconds to average process usage
     AVERAGE_SECS = 1
 
-    # list of process indexed by uuid, each entry:
-    #    :pid
-    #    :memory
-    #    :cpu
-    def self.process_list
-        pids  = []
-        procs = {}
-        ps    = `ps auxwww`
+    # Regex used to retrieve VMs process info
+    PS_REGEX = /-uuid ([a-z0-9\-]+) /
 
-        ps.each_line do |l|
-            m = l.match(/-uuid ([a-z0-9\-]+) /)
-            next unless m
+    def self.retrieve_names
+        text, _e, s = KVM.virsh(:list, '')
+        names = []
 
-            l = l.split(/\s+/)
+        return names if s.exitstatus != 0
 
-            swap = `cat /proc/#{l[1]}/status 2>/dev/null | grep VmSwap`
-            swap = swap.split[1] || 0
+        lines = text.split(/\n/)[2..-1]
 
-            procs[m[1]] = {
-                :pid => l[1],
-                :memory => l[5].to_i + swap.to_i
-            }
-
-            pids << l[1]
+        names = lines.map do |line|
+            line.split(/\s+/).delete_if {|d| d.empty? }[1]
         end
 
-        cpu = cpu_info(pids)
-
-        procs.each {|_i, p| p[:cpu] = cpu[p[:pid]] || 0 }
-
-        procs
-    end
-
-    # Get cpu usage in 100% for a set of PIDs
-    #   param[Array] pids of the arrys to compute the CPU usage
-    #   result[Array] array of cpu usage
-    def self.cpu_info(pids)
-        multiplier = Integer(`grep -c processor /proc/cpuinfo`) * 100
-
-        cpu_ini = {}
-
-        j_ini = jiffies
-
-        pids.each do |pid|
-            cpu_ini[pid] = proc_jiffies(pid).to_f
-        end
-
-        sleep AVERAGE_SECS
-
-        cpu_j = jiffies - j_ini
-
-        cpu = {}
-
-        pids.each do |pid|
-            cpu[pid] = (proc_jiffies(pid) - cpu_ini[pid]) / cpu_j
-            cpu[pid] = (cpu[pid] * multiplier).round(2)
-        end
-
-        cpu
-    end
-
-    # CPU tics used in the system
-    def self.jiffies
-        stat = File.open('/proc/stat', 'r') {|f| f.readline }
-
-        j = 0
-
-        stat.split(' ')[1..-3].each {|num| j += num.to_i }
-
-        j
-    rescue StandardError
-        0
-    end
-
-    # CPU tics used by a process
-    def self.proc_jiffies(pid)
-        stat = File.read("/proc/#{pid}/stat")
-
-        j = 0
-
-        data = stat.lines.first.split(' ')
-
-        [13, 14, 15, 16].each {|col| j += data[col].to_i }
-
-        j
-    rescue StandardError
-        0
+        names
     end
 
 end
@@ -548,17 +478,9 @@ module DomainList
 
             vm_ps = ProcessList.process_list if do_process
 
-            text, _e, s = KVM.virsh(:list, '')
+            names = ProcessList.retrieve_names
 
-            return {} if s.exitstatus != 0
-
-            lines = text.split(/\n/)[2..-1]
-
-            return @vms if lines.nil?
-
-            names = lines.map do |line|
-                line.split(/\s+/).delete_if {|d| d.empty? }[1]
-            end
+            return @vms if names.empty?
 
             names.each do |name|
                 vm = yield(name)
